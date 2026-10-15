@@ -40,7 +40,7 @@ const CONFIG = {
   ]
 };
 CONFIG.URL_APP = 'https://babybebe974-arch.github.io/Facturation-Smart/spend-smart/';
-CONFIG.URL_API = '';   // URL /exec du déploiement « Tout le monde » (API de l'app installée)
+CONFIG.URL_API = 'https://script.google.com/macros/s/AKfycbzLvp065hwYgoAYhL7LfGDe4NljYYwT0yiX-IBFvqnP9F1hXaIPuJS-3vgC9RmpYvr1/exec';   // URL /exec du déploiement « Tout le monde » (API de l'app installée)
 const JUSTIF_AUTO = 'Abonnement auto';
 const COULEUR_AUTO = '#d9ead3';
 
