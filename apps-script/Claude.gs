@@ -59,6 +59,7 @@ function traiterDemandesClaude() {
         res = req.action === 'statut' ? changerStatut_(req)
           : req.action === 'compteur' ? reglerCompteur_(req)
           : req.action === 'annuler' ? annulerDocument_(req)
+          : req.action === 'importer' ? importerAncien_(req)
           : creerDocument_(req, f.getId());
         res.ok = true;
       } catch (e) {
@@ -163,6 +164,37 @@ function annulerDocument_(req) {
     }
   }
   throw new Error('Document introuvable : ' + req.numero);
+}
+
+// Import d'une sauvegarde de l'ancienne app (export JSON) : clients et articles ajoutés
+// sans écraser l'existant (fusion par nom), documents ajoutés au registre (sans PDF).
+function importerAncien_(req) {
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  const d = getData_();
+  const clients = (d.clients || []).slice(), products = (d.products || []).slice();
+  const kc = new Set(clients.map(x => norm(x.name))), kp = new Set(products.map(x => norm(x.name)));
+  let nc = 0, np = 0;
+  (req.clients || []).forEach(x => { if (x && x.name && !kc.has(norm(x.name))) { clients.push(x); kc.add(norm(x.name)); nc++; } });
+  (req.products || []).forEach(x => { if (x && x.name && !kp.has(norm(x.name))) { products.push(x); kp.add(norm(x.name)); np++; } });
+  putData_({ clients: clients, products: products, ts: Date.now() });
+
+  const sh = ss_().getSheetByName('Registre');
+  const data = sh.getDataRange().getValues();
+  const iT = COLS.indexOf('type'), iN = COLS.indexOf('numero'), iS = COLS.indexOf('supprime');
+  const deja = new Set(data.slice(1).filter(r => r[iS] !== 'oui').map(r => r[iT] + '|' + r[iN]));
+  let nd = 0; const ignores = [];
+  (req.documents || []).forEach(x => {
+    const k = x.type + '|' + x.numero;
+    if (deja.has(k)) { ignores.push(x.numero); return; }
+    const cl = clients.find(c => norm(c.name) === norm(x.clientName));
+    save_({ doc: {
+      uid: 'import-' + x.id, type: x.type, numero: x.numero, date: x.date, client: x.clientName || '',
+      clientId: cl ? String(cl.id) : '', totalTTC_MUR: Math.round(Number(x.total) * 100) / 100,
+      statut: x.status || '', origine: 'Ancien CodePen', lignes: []
+    } });
+    deja.add(k); nd++;
+  });
+  return { clientsAjoutes: nc, articlesAjoutes: np, documentsAjoutes: nd, ignores: ignores };
 }
 
 // Clients : même liste que l'app (onglet Donnees). Nouveau client → ajouté et synchronisé.
