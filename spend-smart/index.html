@@ -55,12 +55,12 @@
 
 <div class="grille" id="grille">
   <button class="tuile t1" id="b1" onclick="ouvrir('fScan')"><span class="ico">📷</span>Scanner une facture</button>
-  <button class="tuile t2" id="b2" onclick="ouvrir('fCapt')"><span class="ico">🖼️</span>Capture / photo reçue</button>
+  <button class="tuile t2" id="b2" onclick="ouvrir('fCapt')"><span class="ico">🖼️</span>Capture / photo de la galerie</button>
   <button class="tuile t3" id="b3" onclick="afficher('pSans')"><span class="ico">✍️</span>Dépense sans reçu</button>
   <button class="tuile t4" id="b4" onclick="resume()"><span class="ico">📊</span>Mes dépenses du mois</button>
 </div>
 <input type="file" id="fScan" accept="image/*" capture="environment" hidden onchange="envoyerFichiers(this.files,'b1');this.value=''">
-<input type="file" id="fCapt" accept="image/*,application/pdf" multiple hidden onchange="envoyerFichiers(this.files,'b2');this.value=''">
+<input type="file" id="fCapt" accept="image/*" multiple hidden onchange="envoyerFichiers(this.files,'b2');this.value=''">
 
 <div id="res"></div>
 
