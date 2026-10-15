@@ -39,6 +39,8 @@ const CONFIG = {
       categorie: 'Logiciels & abonnements', ttc: 1100, motsCles: ['claude', 'anthropic'] }
   ]
 };
+CONFIG.URL_APP = 'https://babybebe974-arch.github.io/Facturation-Smart/spend-smart/';
+CONFIG.URL_API = '';   // URL /exec du déploiement « Tout le monde » (API de l'app installée)
 const JUSTIF_AUTO = 'Abonnement auto';
 const COULEUR_AUTO = '#d9ead3';
 
@@ -486,9 +488,58 @@ function ajouterSansRecu(o) {
 
 // ====== RACCOURCI ANDROID (application Web) ======
 function doGet() {
+  let actif = '';
+  try { actif = Session.getActiveUser().getEmail(); } catch (e) {}
+  if (!actif || actif !== moi_()) {   // déploiement public (API) : pas de page
+    return HtmlService.createHtmlOutput('<p style="font-family:sans-serif;padding:20px">🔒 Accès réservé — ouvre l\'app Spend Smart.</p>');
+  }
   return HtmlService.createHtmlOutput(page_(true))
     .setTitle('Spend Smart')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+// ====== API pour l'app installée (PWA GitHub Pages) ======
+function cleApp_() {
+  const props = PropertiesService.getScriptProperties();
+  let k = props.getProperty('SPEND_KEY');
+  if (!k) { k = Utilities.getUuid().replace(/-/g, ''); props.setProperty('SPEND_KEY', k); }
+  return k;
+}
+
+function doPost(e) {
+  let r;
+  try {
+    const q = JSON.parse(e.postData.contents);
+    const cle = PropertiesService.getScriptProperties().getProperty('SPEND_KEY');
+    if (!cle || q.cle !== cle) throw new Error('Clé incorrecte : rouvre le lien d\'installation depuis la page Spend Smart.');
+    if (q.action === 'photos') r = { msg: recevoirPhotos(q.liste) };
+    else if (q.action === 'sansRecu') r = { msg: ajouterSansRecu(q.depense) };
+    else if (q.action === 'traiter') r = { msg: traiterDepuisWeb() };
+    else if (q.action === 'resume') r = resumeMois_();
+    else if (q.action === 'ping') r = { categories: CATEGORIES };
+    else throw new Error('Action inconnue');
+    r.ok = true;
+  } catch (err) {
+    r = { ok: false, erreur: err.message };
+  }
+  return ContentService.createTextOutput(JSON.stringify(r)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function resumeMois_() {
+  const ss = ouvrirSS_();
+  const auj = new Date();
+  const mois = Utilities.formatDate(auj, tz_(), 'yyyy-MM');
+  const lignes = lireLignes_(feuille_(ss)).filter(l => l.date instanceof Date &&
+    Utilities.formatDate(l.date, tz_(), 'yyyy-MM') === mois);
+  const total = lignes.reduce((s, l) => s + (Number(l.ttc) || 0), 0);
+  const parCat = {};
+  lignes.forEach(l => { parCat[l.categorie] = (parCat[l.categorie] || 0) + (Number(l.ttc) || 0); });
+  const dernieres = lignes.slice().sort((a, b) => b.date - a.date).slice(0, 10).map(l => ({
+    date: jjmm_(l.date), fournisseur: String(l.fournisseur || ''), description: String(l.description || ''),
+    ttc: Number(l.ttc) || 0, alerte: /Doublon/.test(l.remarque) ? 'doublon' : (l.remarque && l.justif !== JUSTIF_AUTO && l.justif !== 'Sans reçu' ? 'verifier' : '')
+  }));
+  return { mois: MOIS[auj.getMonth()] + ' ' + auj.getFullYear(), total: total, nb: lignes.length,
+    parCat: parCat, dernieres: dernieres, urlSheet: 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/edit' };
 }
 
 function page_(avecLienTableau) {
@@ -529,6 +580,7 @@ function page_(avecLienTableau) {
 <div style="height:14px"></div>
 <button class="btn orange" id="bA" onclick="ajouter()">Ajouter la dépense</button>
 ${avecLienTableau ? '<a class="btn gris" target="_blank" href="' + urlSheet + '">📊 Ouvrir le tableau</a>' : ''}
+${avecLienTableau ? '<a class="btn vert" style="margin-top:10px" target="_blank" href="' + CONFIG.URL_APP + '#k=' + cleApp_() + '&u=' + encodeURIComponent(CONFIG.URL_API) + '">📲 Installer l\'app sur ce téléphone</a>' : ''}
 
 <script>
   function montrer(t){var r=document.getElementById('res');r.textContent=t;r.style.display='block';
