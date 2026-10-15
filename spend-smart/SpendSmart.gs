@@ -31,8 +31,16 @@ const CONFIG = {
   JOUR_AUTO: ScriptApp.WeekDay.SUNDAY, // traitement automatique hebdomadaire
   HEURE_AUTO: 20,
   PAUSE_MS: 4000,                      // pause entre 2 reçus (quota gratuit Gemini)
-  DUREE_MAX_MS: 5 * 60 * 1000          // Apps Script s'arrête à 6 min
+  DUREE_MAX_MS: 5 * 60 * 1000,         // Apps Script s'arrête à 6 min
+
+  // Dépenses ajoutées automatiquement chaque mois (le jour indiqué)
+  RECURRENTES: [
+    { jour: 1, fournisseur: 'Anthropic (Claude)', description: 'Abonnement Claude',
+      categorie: 'Logiciels & abonnements', ttc: 1100, motsCles: ['claude', 'anthropic'] }
+  ]
 };
+const JUSTIF_AUTO = 'Abonnement auto';
+const COULEUR_AUTO = '#d9ead3';
 
 const COLONNES = ['Date', 'Fournisseur', 'N° facture', 'Description', 'Catégorie',
   'HT (Rs)', 'TVA (Rs)', 'TTC (Rs)', 'Justificatif', 'Remarque'];
@@ -340,7 +348,7 @@ function ajouterLigne_(sh, lignes, d, f) {
   const n = { date: date, fournisseur: d.fournisseur || '', numero: d.numero || '', ttc: num_(d.ttc) };
 
   const remarques = [];
-  const dbl = doublon_(lignes, n);
+  const dbl = doublon_(lignes, n) || doublonAbonnement_(lignes, n, d.description);
   if (dbl) remarques.push(`⚠️ Doublon possible : ${dbl.fournisseur || '?'} du ${dbl.date instanceof Date ? jjmmaaaa_(dbl.date) : '?'}`);
   if (!enRoupies) remarques.push(`Montant en ${devise} : à convertir en Rs`);
   if (d.confiance === 'basse') remarques.push('Lecture incertaine');
@@ -373,6 +381,43 @@ function doublon_(lignes, n) {
     if ((memeNum && memeFourn) || (memeMontant && memeJour && memeFourn)) return l;
   }
   return null;
+}
+
+// Reçu d'un abonnement déjà ajouté automatiquement ce mois-ci (ex. facture Claude)
+function doublonAbonnement_(lignes, n, description) {
+  if (!(n.date instanceof Date)) return null;
+  const texte = String((n.fournisseur || '') + ' ' + (description || '')).toLowerCase();
+  const mois = Utilities.formatDate(n.date, tz_(), 'yyyy-MM');
+  for (const rec of CONFIG.RECURRENTES) {
+    if (!rec.motsCles.some(m => texte.includes(m))) continue;
+    const l = lignes.find(x => x.justif === JUSTIF_AUTO && x.fournisseur === rec.fournisseur &&
+      x.date instanceof Date && Utilities.formatDate(x.date, tz_(), 'yyyy-MM') === mois);
+    if (l) return l;
+  }
+  return null;
+}
+
+// Ajoute les abonnements mensuels (une seule fois par mois). Lancé chaque jour à 8h.
+function ajouterAbonnements() {
+  const props = PropertiesService.getScriptProperties();
+  const auj = jourSeul_(new Date());
+  const mois = Utilities.formatDate(auj, tz_(), 'yyyy-MM');
+  const aFaire = CONFIG.RECURRENTES.map((rec, i) => ({ rec, cle: 'RECUR_' + i + '_' + mois }))
+    .filter(x => auj.getDate() >= x.rec.jour && !props.getProperty(x.cle));
+  if (!aFaire.length) return 0;
+  const ss = ouvrirSS_();
+  const sh = feuille_(ss);
+  aFaire.forEach(({ rec, cle }) => {
+    const date = new Date(auj.getFullYear(), auj.getMonth(), rec.jour);
+    sh.appendRow([date, rec.fournisseur, '', rec.description, rec.categorie,
+      '', '', rec.ttc, JUSTIF_AUTO, 'Ajouté automatiquement chaque mois']);
+    sh.getRange(sh.getLastRow(), 1, 1, COLONNES.length).setBackground(COULEUR_AUTO);
+    props.setProperty(cle, '1');
+    journal_(ss, 'Abonnement auto', 1, rec.ttc, 0, 0, rec.description);
+  });
+  trier_(sh);
+  majRecap_(ss);
+  return aFaire.length;
 }
 
 function trier_(sh) {
@@ -621,6 +666,7 @@ function envoyerRecapMoisMenu() {
 
 // Déclencheur quotidien (8h) : récap mensuel le 1er, récap TVA X jours avant l'échéance
 function verifierEnvoiTva() {
+  try { ajouterAbonnements(); } catch (e) { console.error(e); }
   const props = PropertiesService.getScriptProperties();
   const pm = moisPrecedent_(new Date());
   if (!props.getProperty(pm.key)) {
