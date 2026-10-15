@@ -60,6 +60,7 @@ function traiterDemandesClaude() {
           : req.action === 'compteur' ? reglerCompteur_(req)
           : req.action === 'annuler' ? annulerDocument_(req)
           : req.action === 'importer' ? importerAncien_(req)
+          : req.action === 'statutTous' ? statutTous_(req)
           : creerDocument_(req, f.getId());
         res.ok = true;
       } catch (e) {
@@ -195,6 +196,22 @@ function importerAncien_(req) {
     deja.add(k); nd++;
   });
   return { clientsAjoutes: nc, articlesAjoutes: np, documentsAjoutes: nd, ignores: ignores };
+}
+
+// Met le même statut sur tous les documents non annulés : { "action": "statutTous", "statut": "Non payé" }
+function statutTous_(req) {
+  const sh = ss_().getSheetByName('Registre');
+  const data = sh.getDataRange().getValues();
+  const iS = COLS.indexOf('supprime'), iSt = COLS.indexOf('statut');
+  let n = 0;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] && data[i][iS] !== 'oui' && data[i][iSt] !== req.statut) {
+      sh.getRange(i + 1, iSt + 1).setValue(req.statut);
+      sh.getRange(i + 1, COLS.indexOf('majLe') + 1).setValue(new Date());
+      n++;
+    }
+  }
+  return { statut: req.statut, modifies: n };
 }
 
 // Clients : même liste que l'app (onglet Donnees). Nouveau client → ajouté et synchronisé.
