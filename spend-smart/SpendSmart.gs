@@ -207,6 +207,20 @@ function traiterDepuisWeb() {
   return executer_('Android', CONFIG.DUREE_MAX_MS).msg;
 }
 
+// Photos envoyées depuis le téléphone : rangées dans « À traiter » puis lues tout de suite
+function recevoirPhotos(liste) {
+  if (!liste || !liste.length) throw new Error('Aucune photo reçue');
+  preparer_(false);
+  const src = DriveApp.getFolderById(PropertiesService.getScriptProperties().getProperty('ID_A_TRAITER'));
+  const horo = Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd_HHmmss');
+  liste.forEach((p, i) => {
+    const mime = TYPES_OK.includes(p.mime) ? p.mime : 'image/jpeg';
+    const ext = mime === 'application/pdf' ? '.pdf' : mime === 'image/png' ? '.png' : '.jpg';
+    src.createFile(Utilities.newBlob(Utilities.base64Decode(p.b64), mime, `photo_${horo}_${i + 1}${ext}`));
+  });
+  return executer_('Android (photo)', CONFIG.DUREE_MAX_MS).msg;
+}
+
 function executer_(source, dureeMax) {
   const debut = Date.now();
   const props = PropertiesService.getScriptProperties();
@@ -489,6 +503,7 @@ function page_(avecLienTableau) {
   h3{margin:22px 0 10px;font-size:17px}
   .btn{display:block;width:100%;box-sizing:border-box;border:0;border-radius:12px;padding:15px;
        font-size:17px;font-weight:600;text-align:center;text-decoration:none;cursor:pointer}
+  .vert{background:#2f5d45;color:#fff;margin-bottom:10px}.vert2{background:#e3eee7;color:#2f5d45}
   .bleu{background:#1f4e79;color:#fff}.orange{background:#e69138;color:#fff}
   .gris{background:#eef2f6;color:#1f4e79;margin-top:10px}
   label{display:block;font-size:14px;margin:10px 0 4px;color:#4a5563}
@@ -497,7 +512,12 @@ function page_(avecLienTableau) {
   .btn:disabled{opacity:.6}
 </style></head><body>
 <h2>💸 Spend Smart</h2>
-<button class="btn bleu" id="bT" onclick="traiter()">📥 Traiter les reçus scannés</button>
+<button class="btn vert" id="bP" onclick="document.getElementById('fP').click()">📷 Photographier un reçu</button>
+<button class="btn vert2" id="bG" onclick="document.getElementById('fG').click()">🖼️ Photo / capture / PDF du téléphone</button>
+<input type="file" id="fP" accept="image/*" capture="environment" style="display:none" onchange="envoyer(this)">
+<input type="file" id="fG" accept="image/*,application/pdf" multiple style="display:none" onchange="envoyer(this)">
+<div style="height:10px"></div>
+<button class="btn bleu" id="bT" onclick="traiter()">📥 Traiter les reçus du dossier Drive</button>
 <div id="res"></div>
 
 <h3>➕ Dépense en espèces sans reçu</h3>
@@ -534,6 +554,28 @@ ${avecLienTableau ? '<a class="btn gris" target="_blank" href="' + urlSheet + '"
       .ajouterSansRecu(o);
   }
   function val(id){return document.getElementById(id).value.trim();}
+  // Réduit les photos (max 1800 px, JPEG) pour un envoi rapide en 3G/4G
+  function lire(f){return new Promise(function(ok,ko){
+    var r=new FileReader();r.onerror=ko;
+    if(f.type==='application/pdf'){r.onload=function(){ok({b64:r.result.split(',')[1],mime:'application/pdf'});};r.readAsDataURL(f);return;}
+    r.onload=function(){var img=new Image();img.onerror=function(){ok({b64:r.result.split(',')[1],mime:f.type||'image/jpeg'});};
+      img.onload=function(){var m=1800,k=Math.min(1,m/Math.max(img.width,img.height));
+        var c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        ok({b64:c.toDataURL('image/jpeg',0.85).split(',')[1],mime:'image/jpeg'});};
+      img.src=r.result;};
+    r.readAsDataURL(f);});}
+  function envoyer(inp){
+    var fs=Array.prototype.slice.call(inp.files||[]);if(!fs.length)return;
+    var b=inp.id==='fP'?'bP':'bG',lib=document.getElementById(b).textContent;
+    occupe(b,true,'⏳ Envoi et lecture de '+fs.length+' reçu(s)…');
+    Promise.all(fs.map(lire)).then(function(l){
+      google.script.run
+        .withSuccessHandler(function(m){montrer(m);occupe(b,false,lib);inp.value='';})
+        .withFailureHandler(function(e){montrer('⚠️ '+e.message);occupe(b,false,lib);inp.value='';})
+        .recevoirPhotos(l);
+    }).catch(function(e){montrer('⚠️ Photo illisible : '+e);occupe(b,false,lib);});
+  }
 </script></body></html>`;
 }
 
